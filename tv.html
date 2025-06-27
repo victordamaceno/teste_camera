@@ -1,1 +1,178 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <title>Reconhecimento de Danos com Vertex AI</title>
+  <style>
+    #videoContainer {
+      position: relative;
+      width: 640px;
+      height: 480px;
+      margin: 20px auto;
+    }
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #overlayText {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 4px 10px;
+      border-radius: 5px;
+      font-size: 18px;
+      z-index: 10;
+    }
+    #controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin: 20px auto;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
 
+<div id="controls">
+  <button id="startBtn">Iniciar Câmera</button>
+  <button id="switchBtn" disabled>Trocar Câmera</button>
+  <button id="analisarDanosBtn" disabled>Analisar Danos</button>
+</div>
+
+<div id="videoContainer">
+  <video id="videoElement" width="640" height="480" autoplay muted playsinline></video>
+  <canvas id="canvasOverlay" width="640" height="480"></canvas>
+  <div id="overlayText">Clique em "Iniciar Câmera"</div>
+</div>
+
+<script>
+  const video = document.getElementById('videoElement');
+  const canvas = document.getElementById('canvasOverlay');
+  const ctx = canvas.getContext('2d');
+  const overlayText = document.getElementById('overlayText');
+  const startBtn = document.getElementById('startBtn');
+  const switchBtn = document.getElementById('switchBtn');
+  const analisarBtn = document.getElementById('analisarDanosBtn');
+
+  let stream;
+  let facingMode = "environment";
+
+  async function startCamera() {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode },
+        audio: false
+      });
+
+      video.srcObject = stream;
+
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => {
+          resolve();
+        };
+      });
+    } catch (err) {
+      overlayText.textContent = "Erro ao acessar a câmera.";
+      console.error(err);
+    }
+  }
+
+  function captureImageFromVideo() {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = video.videoWidth;
+    tempCanvas.height = video.videoHeight;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+    return tempCanvas.toDataURL('image/jpeg'); // base64
+  }
+
+  async function sendToVertexAI(base64Image) {
+    const endpointUrl = 'https://SEU_ENDPOINT.a.run.app/predict'; // 🔁 ALTERE AQUI
+    try {
+      const response = await fetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          instances: [
+            {
+              content: base64Image.replace(/^data:image\/jpeg;base64,/, '')
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.predictions;
+    } catch (err) {
+      console.error("Erro ao enviar para Vertex:", err);
+      return null;
+    }
+  }
+
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    switchBtn.disabled = false;
+    analisarBtn.disabled = false;
+
+    overlayText.textContent = "Iniciando câmera...";
+    await startCamera();
+    overlayText.textContent = "Câmera ativa.";
+  });
+
+  switchBtn.addEventListener('click', async () => {
+    facingMode = facingMode === "user" ? "environment" : "user";
+    overlayText.textContent = "Alternando câmera...";
+    await startCamera();
+    overlayText.textContent = "Câmera alternada.";
+  });
+
+  analisarBtn.addEventListener('click', async () => {
+    overlayText.textContent = "Analisando danos...";
+
+    const base64 = captureImageFromVideo();
+    const predictions = await sendToVertexAI(base64);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!predictions || predictions.length === 0) {
+      overlayText.textContent = "Nenhum dano detectado.";
+      return;
+    }
+
+    // Exibe a resposta textual simples
+    overlayText.textContent = predictions.map(p => `${p.label} (${(p.score * 100).toFixed(1)}%)`).join(" | ");
+
+    // Caso retorne bounding boxes, descomente abaixo e adapte os campos:
+    /*
+    predictions.forEach(pred => {
+      const [x, y, width, height] = pred.bbox;
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x, y, width, height);
+      ctx.font = '16px sans-serif';
+      ctx.fillStyle = 'red';
+      ctx.fillText(pred.label, x, y - 5);
+    });
+    */
+  });
+</script>
+
+</body>
+</html>
