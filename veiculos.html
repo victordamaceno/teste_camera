@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Reconhecimento de Veículos</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.13.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <style>
+    video, canvas { 
+      position: absolute; 
+      top: 0; left: 0;
+    }
+  </style>
+</head>
+<body>
+  <video id="video" width="640" height="480" autoplay muted></video>
+  <canvas id="canvas" width="640" height="480"></canvas>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    async function startCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      return new Promise(resolve => video.onloadedmetadata = resolve);
+    }
+
+    async function detectVehicles() {
+      const model = await cocoSsd.load();
+      console.log("Modelo carregado.");
+
+      async function detectFrame() {
+        const predictions = await model.detect(video);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0);
+
+        predictions.forEach(prediction => {
+          const vehicleTypes = ['car', 'truck', 'bus', 'motorcycle'];
+          if (vehicleTypes.includes(prediction.class)) {
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(...prediction.bbox);
+            ctx.font = '18px Arial';
+            ctx.fillStyle = 'red';
+            ctx.fillText(`${prediction.class} (${Math.round(prediction.score * 100)}%)`, prediction.bbox[0], prediction.bbox[1] > 20 ? prediction.bbox[1] - 5 : 20);
+          }
+        });
+
+        requestAnimationFrame(detectFrame);
+      }
+
+      detectFrame();
+    }
+
+    startCamera().then(detectVehicles);
+  </script>
+</body>
+</html>
