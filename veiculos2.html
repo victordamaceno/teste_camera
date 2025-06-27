@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Detecção de Carros (iPhone compatível)</title>
+  <style>
+    canvas, video {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #container {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      height: auto;
+    }
+    button {
+      margin: 16px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Detecção de Carros (compatível com iPhone)</h2>
+  <button onclick="startCamera()">Iniciar câmera</button>
+  <div id="container">
+    <video id="video" width="640" height="480" playsinline muted></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+  </div>
+
+  <!-- TensorFlow.js e modelo COCO-SSD -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let model;
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+        await video.play();
+
+        model = await cocoSsd.load();
+        detectFrame();
+      } catch (err) {
+        alert('Erro ao acessar a câmera: ' + err.message);
+      }
+    }
+
+    async function detectFrame() {
+      const predictions = await model.detect(video);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      predictions.forEach(pred => {
+        if (pred.class === 'car' && pred.score > 0.5) {
+          ctx.strokeStyle = 'red';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(...pred.bbox);
+          ctx.font = '16px Arial';
+          ctx.fillStyle = 'red';
+          ctx.fillText(`${pred.class} (${Math.round(pred.score * 100)}%)`, pred.bbox[0], pred.bbox[1] - 5);
+        }
+      });
+
+      requestAnimationFrame(detectFrame);
+    }
+  </script>
+</body>
+</html>
