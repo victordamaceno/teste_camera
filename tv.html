@@ -98,7 +98,7 @@
   }
 
   async function sendToVertexAI(base64Image) {
-    const endpointUrl = 'https://SEU_ENDPOINT.a.run.app/predict'; // 🔁 ALTERE AQUI
+    const endpointUrl = 'https://us-central1-aiplatform.googleapis.com/v1/projects/ibatiai/locations/us-central1/publishers/google/models/gemini-2.0-flash-lite:generateContent'; // 🔁 ALTERE AQUI
     try {
       const response = await fetch(endpointUrl, {
         method: 'POST',
