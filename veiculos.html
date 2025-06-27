@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8" />
-  <title>Detecção de Carros (Compatível com iPhone)</title>
+  <title>Detecção de Carros com Alternância de Câmera</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
@@ -27,22 +27,31 @@
       border-radius: 5px;
       font-size: 18px;
     }
-    #startBtn {
-      display: block;
+    #controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
       margin: 20px auto;
+      max-width: 660px;
+    }
+    button {
       padding: 10px 20px;
       font-size: 18px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
 
-<button id="startBtn">Iniciar Câmera e Detecção</button>
+<div id="controls">
+  <button id="startBtn">Iniciar Câmera e Detecção</button>
+  <button id="switchBtn" disabled>Alternar Câmera</button>
+</div>
 
 <div id="videoContainer">
   <video id="videoElement" width="640" height="480" autoplay muted playsinline></video>
   <canvas id="canvasOverlay" width="640" height="480"></canvas>
-  <div id="overlayText">Clique para iniciar</div>
+  <div id="overlayText">Clique em iniciar</div>
 </div>
 
 <script>
@@ -51,19 +60,34 @@
   const ctx = canvas.getContext('2d');
   const overlayText = document.getElementById('overlayText');
   const startBtn = document.getElementById('startBtn');
+  const switchBtn = document.getElementById('switchBtn');
 
   let model;
+  let stream;
+  let facingMode = "environment"; // começar pela câmera traseira (padrão)
+  let isDetecting = false;
 
   async function startCamera() {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
-    return new Promise(resolve => {
-      video.onloadedmetadata = () => resolve();
-    });
+    if (stream) {
+      // Para a câmera atual se existir
+      stream.getTracks().forEach(track => track.stop());
+    }
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingMode },
+        audio: false
+      });
+      video.srcObject = stream;
+      await new Promise(resolve => video.onloadedmetadata = resolve);
+    } catch (err) {
+      overlayText.textContent = "Erro ao acessar a câmera: " + err.message;
+      throw err;
+    }
   }
 
   async function detectFrame() {
-    if (!model) return;
+    if (!model || !isDetecting) return;
 
     const predictions = await model.detect(video);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -85,20 +109,47 @@
     });
 
     overlayText.textContent = `Veículos detectados: ${carCount}`;
-
     requestAnimationFrame(detectFrame);
   }
 
-  startBtn.addEventListener('click', async () => {
+  async function startDetection() {
     startBtn.disabled = true;
-    overlayText.textContent = 'Carregando modelo...';
+    switchBtn.disabled = false;
+    overlayText.textContent = "Carregando modelo...";
+    isDetecting = false;
 
-    await startCamera();
-    model = await cocoSsd.load();
+    try {
+      await startCamera();
+      if (!model) {
+        model = await cocoSsd.load();
+      }
+      overlayText.textContent = "Detecção iniciada!";
+      isDetecting = true;
+      detectFrame();
+    } catch {
+      startBtn.disabled = false;
+      switchBtn.disabled = true;
+    }
+  }
 
-    overlayText.textContent = 'Detecção iniciada!';
-    detectFrame();
-  });
+  async function switchCamera() {
+    facingMode = facingMode === "environment" ? "user" : "environment";
+    overlayText.textContent = "Alternando câmera...";
+    isDetecting = false;
+
+    try {
+      await startCamera();
+      overlayText.textContent = "Câmera alternada. Detectando...";
+      isDetecting = true;
+      detectFrame();
+    } catch (err) {
+      overlayText.textContent = "Erro ao alternar câmera: " + err.message;
+      isDetecting = false;
+    }
+  }
+
+  startBtn.addEventListener('click', startDetection);
+  switchBtn.addEventListener('click', switchCamera);
 </script>
 
 </body>
