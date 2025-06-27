@@ -1,73 +1,106 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Detecção de Carros (iPhone compatível)</title>
+  <title>Reconhecimento de Avarias em Veículos</title>
   <style>
-    canvas, video {
-      position: absolute;
-      top: 0;
-      left: 0;
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+      background: #f4f4f4;
+    }
+    h2 {
+      margin-top: 16px;
     }
     #container {
       position: relative;
       width: 100%;
       max-width: 640px;
+      margin: 0 auto;
+    }
+    video, canvas {
+      width: 100%;
       height: auto;
+      border-radius: 8px;
+      position: absolute;
+      top: 0;
+      left: 0;
     }
     button {
-      margin: 16px;
-      padding: 10px 20px;
+      margin: 20px;
+      padding: 12px 24px;
       font-size: 16px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <h2>Detecção de Carros (compatível com iPhone)</h2>
-  <button onclick="startCamera()">Iniciar câmera</button>
-  <div id="container">
+  <h2>Detecção de Avarias em Tempo Real</h2>
+  <button onclick="start()">Iniciar Câmera</button>
+
+  <div id="container" style="height: 480px;">
     <video id="video" width="640" height="480" playsinline muted></video>
     <canvas id="canvas" width="640" height="480"></canvas>
   </div>
 
-  <!-- TensorFlow.js e modelo COCO-SSD -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-
   <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    let model;
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
 
-    async function startCamera() {
+    const MODEL_ENDPOINT = "https://detect.roboflow.com/car-damage-detection/1?api_key=rfG1hxDwT9Vh5TqZ3EVz";
+
+    async function start() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
         video.srcObject = stream;
         await video.play();
 
-        model = await cocoSsd.load();
-        detectFrame();
+        setInterval(() => detectDamage(), 2000);
       } catch (err) {
-        alert('Erro ao acessar a câmera: ' + err.message);
+        alert("Erro ao acessar a câmera: " + err.message);
       }
     }
 
-    async function detectFrame() {
-      const predictions = await model.detect(video);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    async function detectDamage() {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
 
-      predictions.forEach(pred => {
-        if (pred.class === 'car' && pred.score > 0.5) {
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(...pred.bbox);
-          ctx.font = '16px Arial';
-          ctx.fillStyle = 'red';
-          ctx.fillText(`${pred.class} (${Math.round(pred.score * 100)}%)`, pred.bbox[0], pred.bbox[1] - 5);
-        }
+      const imageBlob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg"));
+      const formData = new FormData();
+      formData.append("file", imageBlob);
+
+      const response = await fetch(MODEL_ENDPOINT, {
+        method: "POST",
+        body: formData
       });
 
-      requestAnimationFrame(detectFrame);
+      const result = await response.json();
+
+      // Redesenha a imagem para manter visível
+      ctx.drawImage(video, 0, 0);
+
+      if (result?.predictions?.length > 0) {
+        for (const pred of result.predictions) {
+          const { x, y, width, height, class: label, confidence } = pred;
+
+          const left = x - width / 2;
+          const top = y - height / 2;
+
+          ctx.strokeStyle = "red";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(left, top, width, height);
+
+          ctx.fillStyle = "red";
+          ctx.font = "16px sans-serif";
+          ctx.fillText(`${label} (${Math.round(confidence * 100)}%)`, left, top - 5);
+        }
+      }
     }
   </script>
 </body>
