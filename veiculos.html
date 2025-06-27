@@ -2,57 +2,112 @@
 <html lang="pt-br">
 <head>
   <meta charset="UTF-8" />
-  <title>Detecção de Carros com Alternância de Câmera</title>
+  <title>Detecção de Carros com Alternância de Câmera (Tela cheia)</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
-    #videoContainer {
-      position: relative;
-      width: 640px;
-      height: 480px;
-      margin: 20px auto;
-    }
-    video, canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-    }
-    #overlayText {
-      position: absolute;
-      top: 10px;
-      left: 10px;
+    /* Reset básico */
+    html, body {
+      margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden;
+      background: black;
+      font-family: sans-serif;
       color: white;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 4px 10px;
-      border-radius: 5px;
-      font-size: 18px;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      user-select: none;
     }
+
     #controls {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
       display: flex;
-      justify-content: center;
       gap: 10px;
-      margin: 20px auto;
-      max-width: 660px;
+      background: rgba(0,0,0,0.5);
+      padding: 10px 20px;
+      border-radius: 10px;
+      user-select: none;
     }
+
     button {
       padding: 10px 20px;
-      font-size: 18px;
+      font-size: 16px;
       cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      background: #0a84ff;
+      color: white;
+      transition: background-color 0.3s ease;
+    }
+    button:disabled {
+      background: #555;
+      cursor: default;
+    }
+    button:hover:not(:disabled) {
+      background: #005ecb;
+    }
+
+    #videoContainer {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    video, canvas {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover; /* mantém proporção e preenche a tela */
+      max-width: none;
+      max-height: none;
+    }
+
+    #canvasOverlay {
+      pointer-events: none; /* para permitir cliques passarem para o vídeo */
+    }
+
+    #overlayText {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 18px;
+      user-select: none;
+      max-width: 90vw;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      z-index: 9999;
     }
   </style>
 </head>
 <body>
 
-<div id="controls">
-  <button id="startBtn">Iniciar Câmera e Detecção</button>
-  <button id="switchBtn" disabled>Alternar Câmera</button>
-</div>
+  <div id="controls">
+    <button id="startBtn">Iniciar Câmera e Detecção</button>
+    <button id="switchBtn" disabled>Alternar Câmera</button>
+  </div>
 
-<div id="videoContainer">
-  <video id="videoElement" width="640" height="480" autoplay muted playsinline></video>
-  <canvas id="canvasOverlay" width="640" height="480"></canvas>
+  <div id="videoContainer">
+    <video id="videoElement" autoplay muted playsinline></video>
+    <canvas id="canvasOverlay"></canvas>
+  </div>
+
   <div id="overlayText">Clique em iniciar</div>
-</div>
 
 <script>
   const video = document.getElementById('videoElement');
@@ -64,12 +119,19 @@
 
   let model;
   let stream;
-  let facingMode = "environment"; // começar pela câmera traseira (padrão)
+  let facingMode = "environment"; // câmera traseira padrão
   let isDetecting = false;
+
+  // Ajusta canvas para ter o mesmo tamanho do vídeo (tela cheia)
+  function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
 
   async function startCamera() {
     if (stream) {
-      // Para a câmera atual se existir
       stream.getTracks().forEach(track => track.stop());
     }
 
@@ -80,6 +142,8 @@
       });
       video.srcObject = stream;
       await new Promise(resolve => video.onloadedmetadata = resolve);
+
+      resizeCanvas();
     } catch (err) {
       overlayText.textContent = "Erro ao acessar a câmera: " + err.message;
       throw err;
@@ -98,13 +162,37 @@
       if (pred.score > 0.6 && ['car', 'truck', 'bus'].includes(pred.class)) {
         carCount++;
         ctx.strokeStyle = 'lime';
-        ctx.lineWidth = 2;
-        ctx.font = '16px sans-serif';
+        ctx.lineWidth = 4;
+        ctx.font = '20px sans-serif';
         ctx.fillStyle = 'lime';
 
+        // Ajusta bbox para o tamanho da tela (porque o vídeo está "cover")
+        // Calcula escala proporcional entre vídeo e canvas
+        const videoRatio = video.videoWidth / video.videoHeight;
+        const canvasRatio = canvas.width / canvas.height;
+        let scaleX, scaleY, offsetX = 0, offsetY = 0;
+
+        if (canvasRatio > videoRatio) {
+          // canvas mais largo, escala baseada na altura
+          scaleY = canvas.height / video.videoHeight;
+          scaleX = scaleY;
+          offsetX = (canvas.width - video.videoWidth * scaleX) / 2;
+        } else {
+          // canvas mais alto, escala baseada na largura
+          scaleX = canvas.width / video.videoWidth;
+          scaleY = scaleX;
+          offsetY = (canvas.height - video.videoHeight * scaleY) / 2;
+        }
+
         const [x, y, width, height] = pred.bbox;
-        ctx.strokeRect(x, y, width, height);
-        ctx.fillText(`${pred.class} (${(pred.score * 100).toFixed(1)}%)`, x + 5, y + 15);
+        // Converte bbox para coordenadas no canvas
+        const rectX = x * scaleX + offsetX;
+        const rectY = y * scaleY + offsetY;
+        const rectWidth = width * scaleX;
+        const rectHeight = height * scaleY;
+
+        ctx.strokeRect(rectX, rectY, rectWidth, rectHeight);
+        ctx.fillText(`${pred.class} (${(pred.score * 100).toFixed(1)}%)`, rectX + 5, rectY + 25);
       }
     });
 
