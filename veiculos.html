@@ -1,81 +1,105 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <title>Detecção de Rosto com Câmera</title>
-  <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  <meta charset="UTF-8" />
+  <title>Detecção de Carros (Compatível com iPhone)</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
     #videoContainer {
       position: relative;
       width: 640px;
       height: 480px;
+      margin: 20px auto;
     }
     video, canvas {
       position: absolute;
       top: 0;
       left: 0;
     }
-    #overlay {
+    #overlayText {
       position: absolute;
       top: 10px;
       left: 10px;
       color: white;
-      background-color: rgba(0, 0, 0, 0.6);
-      padding: 5px 10px;
-      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 4px 10px;
+      border-radius: 5px;
       font-size: 18px;
-      z-index: 10;
+    }
+    #startBtn {
+      display: block;
+      margin: 20px auto;
+      padding: 10px 20px;
+      font-size: 18px;
     }
   </style>
 </head>
 <body>
-  <div id="videoContainer">
-    <video id="videoElement" width="640" height="480" autoplay muted></video>
-    <canvas id="canvasOverlay" width="640" height="480"></canvas>
-    <div id="overlay">Carregando modelos...</div>
-  </div>
 
-  <script>
-    const video = document.getElementById('videoElement');
-    const canvas = document.getElementById('canvasOverlay');
-    const overlay = document.getElementById('overlay');
+<button id="startBtn">Iniciar Câmera e Detecção</button>
 
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-      } catch (err) {
-        overlay.textContent = "Erro ao acessar a câmera.";
-        console.error(err);
+<div id="videoContainer">
+  <video id="videoElement" width="640" height="480" autoplay muted playsinline></video>
+  <canvas id="canvasOverlay" width="640" height="480"></canvas>
+  <div id="overlayText">Clique para iniciar</div>
+</div>
+
+<script>
+  const video = document.getElementById('videoElement');
+  const canvas = document.getElementById('canvasOverlay');
+  const ctx = canvas.getContext('2d');
+  const overlayText = document.getElementById('overlayText');
+  const startBtn = document.getElementById('startBtn');
+
+  let model;
+
+  async function startCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
+    return new Promise(resolve => {
+      video.onloadedmetadata = () => resolve();
+    });
+  }
+
+  async function detectFrame() {
+    if (!model) return;
+
+    const predictions = await model.detect(video);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    let carCount = 0;
+
+    predictions.forEach(pred => {
+      if (pred.score > 0.6 && ['car', 'truck', 'bus'].includes(pred.class)) {
+        carCount++;
+        ctx.strokeStyle = 'lime';
+        ctx.lineWidth = 2;
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = 'lime';
+
+        const [x, y, width, height] = pred.bbox;
+        ctx.strokeRect(x, y, width, height);
+        ctx.fillText(`${pred.class} (${(pred.score * 100).toFixed(1)}%)`, x + 5, y + 15);
       }
-    }
+    });
 
-    async function startFaceDetection() {
-      // MODELOS CARREGADOS DE URL FUNCIONAL
-      const modelUrl = 'https://justadudewhohacks.github.io/face-api.js/models';
-      await faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl);
+    overlayText.textContent = `Veículos detectados: ${carCount}`;
 
-      overlay.textContent = "Modelos carregados. Iniciando detecção...";
-      faceapi.matchDimensions(canvas, video);
+    requestAnimationFrame(detectFrame);
+  }
 
-      setInterval(async () => {
-        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    overlayText.textContent = 'Carregando modelo...';
 
-        const resized = faceapi.resizeResults(detections, {
-          width: video.videoWidth,
-          height: video.videoHeight,
-        });
+    await startCamera();
+    model = await cocoSsd.load();
 
-        const context = canvas.getContext('2d');
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        faceapi.draw.drawDetections(canvas, resized);
+    overlayText.textContent = 'Detecção iniciada!';
+    detectFrame();
+  });
+</script>
 
-        overlay.textContent = `Rostos detectados: ${resized.length}`;
-      }, 200);
-    }
-
-    video.addEventListener('play', startFaceDetection);
-    startCamera();
-  </script>
 </body>
 </html>
